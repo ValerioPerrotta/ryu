@@ -2619,22 +2619,24 @@ class OFPInstructionState(OFPInstruction):
     ================ ======================================================
     """
 
-    def __init__(self, state=0, type_=None, len_=None):
+    def __init__(self, state=0, type_=None, len_=None,timeout=0,to_state=0):
         super(OFPInstructionState, self).__init__()
         self.type = ofproto.OFPIT_SET_STATE
         self.len = ofproto.OFP_INSTRUCTION_STATE_SIZE
         self.state= state
+	self.timeout=timeout
+	self.to_state=to_state
 
     @classmethod
     def parser(cls, buf, offset):
-        (type_, len_, state) = struct.unpack_from(
+        (type_, len_, state,timeout,to_state) = struct.unpack_from(
             ofproto.OFP_INSTRUCTION_STATE_PACK_STR,
             buf, offset)
         return cls(state)
 
     def serialize(self, buf, offset):
         msg_pack_into(ofproto.OFP_INSTRUCTION_STATE_PACK_STR,
-                      buf, offset, self.type, self.len, self.state)
+                      buf, offset, self.type, self.len, self.state,self.timeout,self.to_state)
 
 
 class OFPActionHeader(StringifyMixin):
