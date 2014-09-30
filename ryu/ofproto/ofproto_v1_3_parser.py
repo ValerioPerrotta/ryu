@@ -2619,7 +2619,7 @@ class OFPInstructionState(OFPInstruction):
     ================ ======================================================
     """
 
-    def __init__(self, state=0, type_=None, len_=None,timeout=0,to_state=0):
+    def __init__(self, state=0, timeout=0,to_state=0,type_=None, len_=None):
         super(OFPInstructionState, self).__init__()
         self.type = ofproto.OFPIT_SET_STATE
         self.len = ofproto.OFP_INSTRUCTION_STATE_SIZE
