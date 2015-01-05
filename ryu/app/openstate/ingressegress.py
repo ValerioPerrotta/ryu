@@ -210,7 +210,7 @@ class OSIngressEgress(app_manager.RyuApp):
 						actions = []
 						#the following lines are for the special flood
 						for out_port in range(1,SWITCH_PORTS+1):
-							if in_port != out_port:
+							if in_port != out_port and out_port != TRANSPORT_PORT:
 								actions.append(parser.OFPActionOutput(out_port, 0))
 						
 						actions.append(parser.OFPActionPushMpls(ethertype = 34887))
@@ -264,7 +264,7 @@ class OSIngressEgress(app_manager.RyuApp):
 				for stateOne in range(0,SWITCH_PORTS+1):
 					
 					match = parser.OFPMatch( in_port = TRANSPORT_PORT, metadata = stateOne)
-					actions = [parser.OFPActionPopMpls( ethertype = 2048)]	#this mpls_label is useless, because it contains 0 or my_id
+					actions = [parser.OFPActionPopMpls( ethertype = 34887)]	#this mpls_label is useless, because it contains 0 or my_id
 					inst = [
 							parser.OFPInstructionActions( type_ = ofproto.OFPIT_APPLY_ACTIONS, actions = actions),
 							parser.OFPInstructionWriteMetadata( metadata = stateOne, metadata_mask = 0xFFFFFFFF),
@@ -313,7 +313,7 @@ class OSIngressEgress(app_manager.RyuApp):
 					datapath.send_msg(mod)
 				
 				elif stateOne == TRANSPORT_PORT:
-					match = parser.OFPMatch( in_port = in_port, metadata = TRANSPORT_PORT, eth_type = 34887, mpls_label = 0) 
+					match = parser.OFPMatch( in_port = in_port, metadata = TRANSPORT_PORT, eth_type = 34887) 
 					actions = [
 							parser.OFPActionSetField(mpls_label = my_id),
 							parser.OFPActionPushMpls(ethertype = 34887 )
@@ -354,7 +354,7 @@ class OSIngressEgress(app_manager.RyuApp):
 						#if stateOne == TRANSPORT_PORT --> set_mpls(your_id) and out(TRANSPORT_PORT)
 				for your_id in range( 1, EDGE_SWITCHES):
 					if your_id != my_id:
-						match = parser.OFPMatch( in_port = in_port, metadata = TRANSPORT_PORT, eth_type = 34887, mpls_label = 0, state = your_id) 
+						match = parser.OFPMatch( in_port = in_port, metadata = TRANSPORT_PORT, eth_type = 34887, mpls_label = my_id, state = your_id) 
 						actions = [
 								parser.OFPActionSetField( mpls_label = your_id),
 								parser.OFPActionOutput( TRANSPORT_PORT, 0)]
@@ -377,7 +377,7 @@ class OSIngressEgress(app_manager.RyuApp):
 					#cycle on yourId
 						#if stateOne == 0 --> set_state(your_id) and pop mpls_label and FLOOD
 						#else --> set_state(your_id) and pop mpls_label and out(stateOne)
-				for stateOne in range( 1, SWITCH_PORTS + 1):
+				for stateOne in range( 0, SWITCH_PORTS + 1):
 					if stateOne == 0:
 						for your_id in range(1, EDGE_SWITCHES + 1):
 							if your_id != my_id:
