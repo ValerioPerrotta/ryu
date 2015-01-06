@@ -94,6 +94,23 @@ class OSIngressEgress(app_manager.RyuApp):
 		Lookup-scope=ETH_DST
 		Update-scope=ETH_SRC
 
+		The switch has got 2 kinds of ports:
+		EDGE PORTS:
+			these are the ports hosts connect to.
+			When a packet is forwarded through an edge port it doesn't need any mpls label to be pushed or popped.
+		TRANSPORT PORT(S):
+			these are the ports which grant access to the mpls based transport system.
+			When a packet is forwarded through a transport port it needs two mpls label.
+				-The innermost mpls label (the first to be pushed) is set with the sender switch id, to inform reciever(s) who is sending
+				-The outermost mpls label is set to contain reciever's id if known, for mpls forwarding. It is left as a copy of the switch id otherwise.
+		
+		The host has got 2 states:
+		STATE1 = IN_PORT (State Table 0)
+			This represents the switch port where the host speaks from.
+			It is set to TRANSPORT_PORT if the host belong to a different switch on the other side of the transport system		
+		STATE2 = SWITCH_ID (State Table 3)
+			This represents the edge switch the host belongs to.
+			It is set only for hosts talking from TRANSPORT_PORT.
 		'''
 		#TABLE 0
 		#The state tab 0 handles the first state of eth_dst
@@ -191,7 +208,7 @@ class OSIngressEgress(app_manager.RyuApp):
 		#	processes incoming flows from the transport port
 		#		they need the outmost mpls label to be popped.
 		#		Incoming packets from the transport_port have 2 mpls_label:
-		#			Outmost mpls contains MY_ID or 0 (when the packet has been flooded from other switches)
+		#			Outmost mpls contains MY_ID or a default value (when the packet has been flooded from other switches)
 		#			Innermost mpls label is EDGE_SWITCH_ID (which is always != 0 and can't equal the local value my_id)
 		#
 		#	METADATA == STATE1 delivered from tab0
@@ -264,7 +281,7 @@ class OSIngressEgress(app_manager.RyuApp):
 				for stateOne in range(0,SWITCH_PORTS+1):
 					
 					match = parser.OFPMatch( in_port = TRANSPORT_PORT, metadata = stateOne)
-					actions = [parser.OFPActionPopMpls( ethertype = 34887)]	#this mpls_label is useless, because it contains 0 or my_id
+					actions = [parser.OFPActionPopMpls( ethertype = 34887)]	#this mpls_label is useless, because it contains a default value or my_id
 					inst = [
 							parser.OFPInstructionActions( type_ = ofproto.OFPIT_APPLY_ACTIONS, actions = actions),
 							parser.OFPInstructionWriteMetadata( metadata = stateOne, metadata_mask = 0xFFFFFFFF),
