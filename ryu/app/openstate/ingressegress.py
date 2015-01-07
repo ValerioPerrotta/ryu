@@ -27,15 +27,18 @@ from ryu.topology import event
 
 LOG = logging.getLogger('app.openstate.ingressegress')
 
-#numero totale delle porte dello switch
+#number of the edge switches
 SWITCH_PORTS = 4
-#lista delle edge port
+#edge ports list
 EDGE_PORTS = range(1,4)
-#numero della porta di trasporto
+#transport port id
 TRANSPORT_PORT = 4
 
-#numero degli edge switch
+#edge switches number
 EDGE_SWITCHES = 3
+
+MPLS_DEF = 0
+
 
 
 class OSIngressEgress(app_manager.RyuApp):
@@ -55,7 +58,7 @@ class OSIngressEgress(app_manager.RyuApp):
         self.send_features_request(datapath)
 
         self.send_table_mod(datapath, table_id=0)
-	self.send_table_mod(datapath, table_id=3)
+	self.send_table_mod(datapath, table_id=4)
 
         self.send_key_lookup(datapath)
         self.send_key_update(datapath)
@@ -285,7 +288,7 @@ class OSIngressEgress(app_manager.RyuApp):
 					inst = [
 							parser.OFPInstructionActions( type_ = ofproto.OFPIT_APPLY_ACTIONS, actions = actions),
 							parser.OFPInstructionWriteMetadata( metadata = stateOne, metadata_mask = 0xFFFFFFFF),
-							parser.OFPInstructionGotoTable( table_id = 3)]
+							parser.OFPInstructionGotoTable( table_id = 4)]
 
 					#flow mod code
 				        mod = parser.OFPFlowMod(
@@ -311,11 +314,12 @@ class OSIngressEgress(app_manager.RyuApp):
 					match = parser.OFPMatch(in_port = in_port, metadata = 0, eth_type = 34887, mpls_label = 0)
 					actions = [
 							parser.OFPActionSetField(mpls_label = my_id),
-							parser.OFPActionPushMpls(ethertype = 34887 ),
-							parser.OFPActionOutput( TRANSPORT_PORT, 0)
+							parser.OFPActionPushMpls(ethertype = 34887 )
 						   ]
 					inst = [
-							parser.OFPInstructionActions( type_ = ofproto.OFPIT_APPLY_ACTIONS, actions = actions)
+							parser.OFPInstructionActions( type_ = ofproto.OFPIT_APPLY_ACTIONS, actions = actions),
+							parser.OFPInstructionWriteMetadata( metadata = 0, metadata_mask = 0xFFFFFFFF),
+							parser.OFPInstructionGotoTable( table_id = 3)
 						]
 	
 					#flow mod code
@@ -339,7 +343,7 @@ class OSIngressEgress(app_manager.RyuApp):
 					inst = [
 							parser.OFPInstructionActions( type_ = ofproto.OFPIT_APPLY_ACTIONS, actions = actions),
 							parser.OFPInstructionWriteMetadata( metadata = TRANSPORT_PORT,  metadata_mask = 0xFFFFFFFF),
-							parser.OFPInstructionGotoTable( table_id = 3)
+							parser.OFPInstructionGotoTable( table_id = 4)
 						]
 
 					#flow mod code			
@@ -353,14 +357,43 @@ class OSIngressEgress(app_manager.RyuApp):
 					
 					datapath.send_msg(mod)
 				
-
 		#TABLE 3
+		#	This tables simply ends the special flood by setting the outermost mpls label value to MPLS_DEF
+		
+		LOG.info("Installing rules for Table 3 for the switch number %d" % my_id)
+		
+		for in_port in range(1,SWITCH_PORTS + 1):
+			in_port_is_edge = self.in_list( list_ = EDGE_PORTS, value = in_port)
+			if in_port_is_edge == True:
+				LOG.info("Installing rules for port %d (switch %d)" %(in_port, my_id))
+				match = parser.OFPMatch(in_port = in_port, metadata = 0, eth_type = 34887, mpls_label = my_id)
+
+				actions = [
+						parser.OFPActionSetField(mpls_label = MPLS_DEF),
+						parser.OFPActionOutput( TRANSPORT_PORT, 0)
+					   ]
+				inst = [
+						parser.OFPInstructionActions( type_ = ofproto.OFPIT_APPLY_ACTIONS, actions = actions)
+					]
+	
+				#flow mod code
+				mod = parser.OFPFlowMod(
+				   datapath=datapath, cookie=0, cookie_mask=0, table_id=3,
+				   command=ofproto.OFPFC_ADD, idle_timeout=0, hard_timeout=0,
+				   priority=0, buffer_id=ofproto.OFP_NO_BUFFER,
+				   out_port=ofproto.OFPP_ANY,
+				   out_group=ofproto.OFPG_ANY,
+				   flags=0, match=match, instructions=inst)
+					
+				datapath.send_msg(mod)
+				
+		#TABLE 4
 		#The state tab 3 handles the second state associated to the host:	
 		#	STATE2 == EGRESS_SWITCH_ID this is the id of the egress switch where the host speaks from
 		#		Only hosts outside the switch have the second state
 		#		State 2 is taken from the innermost mpls_label of flows that comes from outside (in_port == TRANSPORT_PORT)
 		#	METADATA == STATE1 delivered from tab1
-		LOG.info("Installing rules for State Table 2 for the switch number %d" % my_id)
+		LOG.info("Installing rules for State Table 4 for the switch number %d" % my_id)
 		
 		for in_port in range( 1, SWITCH_PORTS + 1):	
 			LOG.info("Installing rule for port %d (switch %d)" % (in_port, my_id))
@@ -380,7 +413,7 @@ class OSIngressEgress(app_manager.RyuApp):
 				
 						#flow mod
 						mod = parser.OFPFlowMod(
-						   datapath=datapath, cookie=0, cookie_mask=0, table_id=3,
+						   datapath=datapath, cookie=0, cookie_mask=0, table_id=4,
 						   command=ofproto.OFPFC_ADD, idle_timeout=0, hard_timeout=0,
 						   priority=0, buffer_id=ofproto.OFP_NO_BUFFER,
 						   out_port=ofproto.OFPP_ANY,
@@ -400,7 +433,7 @@ class OSIngressEgress(app_manager.RyuApp):
 							if your_id != my_id:
 								match = parser.OFPMatch( in_port = in_port, metadata = 0, eth_type = 34887, mpls_label = your_id)
 								actions = [
-										parser.OFPActionSetState( state = your_id, stage_id = 3),
+										parser.OFPActionSetState( state = your_id, stage_id = 4),
 										parser.OFPActionPopMpls( ethertype = 2048 ),
 										parser.OFPActionOutput( ofproto.OFPP_FLOOD, 0)
 									  ]
@@ -408,7 +441,7 @@ class OSIngressEgress(app_manager.RyuApp):
 
 								#flow mod code
 								mod = parser.OFPFlowMod(
-								   datapath=datapath, cookie=0, cookie_mask=0, table_id=3,
+								   datapath=datapath, cookie=0, cookie_mask=0, table_id=4,
 								   command=ofproto.OFPFC_ADD, idle_timeout=0, hard_timeout=0,
 								   priority=0, buffer_id=ofproto.OFP_NO_BUFFER,
 								   out_port=ofproto.OFPP_ANY,
@@ -422,7 +455,7 @@ class OSIngressEgress(app_manager.RyuApp):
 							if your_id != my_id:
 								match = parser.OFPMatch( in_port = in_port, metadata = stateOne, eth_type = 34887, mpls_label = your_id)
 								actions = [
-										parser.OFPActionSetState( state = your_id, stage_id = 3),
+										parser.OFPActionSetState( state = your_id, stage_id = 4),
 										parser.OFPActionPopMpls( ethertype = 2048 ),
 										parser.OFPActionOutput( stateOne, 0)
 									  ]
@@ -430,7 +463,7 @@ class OSIngressEgress(app_manager.RyuApp):
 
 								#flow mod code
 								mod = parser.OFPFlowMod(
-								   datapath=datapath, cookie=0, cookie_mask=0, table_id=3,
+								   datapath=datapath, cookie=0, cookie_mask=0, table_id=4,
 								   command=ofproto.OFPFC_ADD, idle_timeout=0, hard_timeout=0,
 								   priority=0, buffer_id=ofproto.OFP_NO_BUFFER,
 								   out_port=ofproto.OFPP_ANY,
